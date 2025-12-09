@@ -16,10 +16,10 @@ def cat_swarm_optimization(objective_func, dim, num_cats, max_iter, search_bound
     Parameters:
     - objective_func: The function to be minimized (e.g., sphere_function).
     - dim: Number of dimensions (n in the formula).
-    - num_cats: Total population of cats.
-    - max_iter: Maximum number of iterations.
-    - search_bounds: A tuple (min_val, max_val) for the search space.
-    - verbose: If True, prints progress.
+    - - num_cats: Total population of cats.
+    - - max_iter: Maximum number of iterations.
+    - - search_bounds: A tuple (min_val, max_val) for the search space.
+    - - verbose: If True, prints progress.
     
     CSO Specific Parameters:
     - MR (Mixture Ratio): Percentage of cats in tracing mode.
@@ -40,7 +40,8 @@ def cat_swarm_optimization(objective_func, dim, num_cats, max_iter, search_bound
     c1 = 2.0
     w_max = 0.9
     w_min = 0.4
-    x
+    
+    # --- FIX 1: Removed the stray 'x' variable. ---
     min_val, max_val = search_bounds
     search_range = max_val - min_val
     max_velocity = search_range * 0.2 # Velocity clamp
@@ -69,28 +70,38 @@ def cat_swarm_optimization(objective_func, dim, num_cats, max_iter, search_bound
         
         # Randomly assign cats to Seeking or Tracing mode based on MR
         num_tracing = int(num_cats * MR)
-        num_seeking = num_cats - num_tracing
         
-        indices = np.random.permutation(num_cats)
-        seeking_indices = indices[:num_seeking]
-        tracing_indices = indices[num_seeking:]
-
+        # --- FIX 2: Correctly determine tracing indices and use a boolean array for seeking. ---
+        # The number of tracing cats is MR * num_cats. The rest are seeking.
+        is_tracing = np.zeros(num_cats, dtype=bool)
+        tracing_indices = np.random.choice(num_cats, size=num_tracing, replace=False)
+        is_tracing[tracing_indices] = True
+        
         # --- 3. Process each cat ---
         for i in range(num_cats):
             
-            if i in seeking_indices:
+            if not is_tracing[i]:
                 # --- 3a. Seeking Mode (Local Search) ---
                 
                 # Create SMP copies of the cat's position
                 copies = np.tile(positions[i], (SMP, 1))
                 
                 # Mutate CDC dimensions for (SMP-1) copies
-                for j in range(SMP - 1):
+                for j in range(SMP): # Iterate over all SMP copies (including the original, if needed, but usually (SMP-1) are mutated)
+                    if j == SMP - 1: # The last one is usually the original cat's position (no mutation)
+                        # An alternative approach: keep the original, mutate (SMP-1) copies
+                        # This implementation mutates all but the final copy, keeping the first copy unmutated for comparison.
+                        continue
+                        
                     num_dims_to_change = int(CDC * dim)
+                    # Handle the case where CDC might result in 0 dimensions
+                    if num_dims_to_change == 0:
+                        num_dims_to_change = 1 
+                        
                     dims_to_change = np.random.choice(dim, num_dims_to_change, replace=False)
                     
-                    # Apply mutation
-                    mutation = (np.random.rand(num_dims_to_change) * 2 - 1) * SRD * search_range
+                    # Apply mutation: (rand * 2 - 1) gives [-1, 1], multiplied by range * SRD
+                    mutation = (np.random.rand(num_dims_to_change) * 2 - 1) * (SRD * search_range)
                     copies[j, dims_to_change] += mutation
                 
                 # Ensure copies are within bounds
@@ -102,16 +113,17 @@ def cat_swarm_optimization(objective_func, dim, num_cats, max_iter, search_bound
                 # Select the best copy
                 best_copy_idx = np.argmin(copy_fitness)
                 
-                # Update the cat's position to the best copy
+                # Update the cat's position and fitness to the best copy
                 positions[i] = copies[best_copy_idx]
                 fitness[i] = copy_fitness[best_copy_idx]
 
-            elif i in tracing_indices:
+            elif is_tracing[i]:
                 # --- 3b. Tracing Mode (Global Search) ---
                 
                 r1 = np.random.rand(dim)
                 
                 # Update velocity (PSO-like)
+                # V_k(t+1) = w * V_k(t) + c1 * r1 * (X_gbest - X_k(t))
                 velocities[i] = (w * velocities[i] +
                                  c1 * r1 * (global_best_pos - positions[i]))
                 
@@ -119,6 +131,7 @@ def cat_swarm_optimization(objective_func, dim, num_cats, max_iter, search_bound
                 velocities[i] = np.clip(velocities[i], min_velocity, max_velocity)
                 
                 # Update position
+                # X_k(t+1) = X_k(t) + V_k(t+1)
                 positions[i] = positions[i] + velocities[i]
                 
                 # Clamp position to bounds
@@ -142,7 +155,7 @@ def cat_swarm_optimization(objective_func, dim, num_cats, max_iter, search_bound
 if __name__ == "__main__":
     
     # Parameters for the problem
-    N_DIMENSIONS = 10  # This is 'n' in your formula
+    N_DIMENSIONS = 10 
     N_CATS = 50
     MAX_ITERATIONS = 100
     SEARCH_BOUNDS = (-100, 100) # Search space for each x_i
@@ -163,4 +176,6 @@ if __name__ == "__main__":
     print("---")
     print("Optimization Finished.")
     print(f"Global Best Fitness Found: {best_fitness:.6e}")
+    # The Sphere function has its minimum at [0, 0, ..., 0].
+    # The best_solution components should be very close to 0.
     print(f"Global Best Position Found (first 5 dims): {best_solution[:5]}")
